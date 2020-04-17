@@ -1,7 +1,7 @@
 /*
-Date: 2020/04/09
-Modifier: Tran Ngoc Cong Thuong
-This code modify for ggcnn network to custom display point cloud
+Date:     2020/04/09
+Composer: Tran Ngoc Cong Thuong
+This code is for ggcnn network to custom display point cloud
  */
  #include "pcl_online_viewer.h"
  #include <pcl/visualization/cloud_viewer.h>
@@ -15,13 +15,14 @@ typedef sensor_msgs::PointCloud2 PointCloud2;
 #endif
 
 using namespace std;
+ostringstream strg;
 
 typedef pcl::PointXYZ Point;
 typedef PointCloud2::ConstPtr PointCloudConstPtr;
 
 boost::mutex m;
 
-// Grasp point
+// Grasp points from grasp configuration
 float px=0;
 float py=0;
 float pz=0.5;
@@ -39,6 +40,7 @@ int center_size_old = 0;
 int num_neighbor=200;
 std::vector<int> pointIdxNKNSearch(num_neighbor);
 std::vector<float> pointNKNSquareDistance(num_neighbor);
+pcl::Normal normal;
 Eigen::Vector4f plane_parameters;
 Eigen::Affine3f transform_coord = Eigen::Affine3f::Identity();
 Eigen::Matrix3f rotation_img;
@@ -47,11 +49,14 @@ pcl::PointXYZRGBA searchPoint;
 float curvature;
 bool ne_bool;
 
-pcl::Normal normal;
-// Point cloud reader
+// Get point cloud variales
 pcl::PointCloud<pcl::PointXYZRGBA>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZRGBA>);
 pcl::KdTreeFLANN<pcl::PointXYZRGBA> kdtree;
 
+// Display variables
+int display_flag = 0;
+int center_cb_flag = 0;
+int cloud_cb_flag = 0;
 int ne_done = 0;
 
 // Function of kd-tree
@@ -92,6 +97,7 @@ void center_cb(const ggcnn::grasp_point::ConstPtr &msg)
     sinthetas[i] = msg->sinthetas[i];
     std::cout << pxs[i] << "\n";
   }
+  center_cb_flag = 1;
 }
 
 //Translate and rotate coordinate for displaying
@@ -149,6 +155,7 @@ void cloud_callback (const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
      kdtree.setInputCloud(temp_cloud);
 
      m.unlock();
+     cloud_cb_flag = 1;
 }
 
 int main (int argc, char** argv)
@@ -172,28 +179,46 @@ int main (int argc, char** argv)
 
         viewer.spinOnce (10);
 
-        m.lock();
+        //viewer.removeAllCoordinateSystems();
+        // m.lock();
         // reset the viewer first
-        viewer.removePointCloud();
+        //viewer.removePointCloud();
         for (int idx=0; idx<center_size_old; idx++)
         {
-            viewer.removeAllCoordinateSystems();
+            //viewer.removeAllCoordinateSystems();
         }
 
         //add new point cloud to the viewer
         if (ne_done)
         {
-          viewer.addPointCloud<pcl::PointXYZRGBA>(temp_cloud);
-          kdtree.setInputCloud(temp_cloud);
-          center_size_old = center_size;
-          for(int idx=0; idx<center_size; idx++)
+          if(center_cb_flag == 1 && cloud_cb_flag == 1)
           {
-            knearest(idx);
-            pointnormalestimation();
-            virtual_coord();
-            viewer.addCoordinateSystem (0.05, transform_coord);
+            ROS_INFO("HERE!");
+            // Remove the old point cloud
+            viewer.removePointCloud();
+            for (int idx=0; idx<center_size_old; idx++)
+            {
+                strg << idx;
+                viewer.removeCoordinateSystem(strg.str(), 0);
+            }
+            viewer.removeAllCoordinateSystems();
+            // Refresh point cloud
+            viewer.addPointCloud<pcl::PointXYZRGBA>(temp_cloud);
+            kdtree.setInputCloud(temp_cloud);
+            center_size_old = center_size;
+            for(int idx=0; idx<center_size; idx++)
+            {
+              center_size_old = center_size;
+              knearest(idx);
+              pointnormalestimation();
+              virtual_coord();
+              strg << idx;
+              viewer.addCoordinateSystem (0.05, transform_coord, strg.str(), 0);
+            }
+            center_cb_flag = 0;
+            cloud_cb_flag = 0;
           }
         }
-        m.unlock();
+        // m.unlock();
      }
 }
